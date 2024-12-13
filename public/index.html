@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Draft - Gorilla Mode</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: url('https://example.com/gorilla-background.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .area {
+            width: 30%;
+            margin: 10px;
+            padding: 10px;
+            border: 1px solid #fff;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            min-height: 200px;
+        }
+
+        .area h2 {
+            text-align: center;
+        }
+
+        .name {
+            padding: 5px;
+            margin: 5px;
+            border-radius: 5px;
+            text-align: center;
+            cursor: grab;
+        }
+
+        .name.healer {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        .name.ranged {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .name.melee {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .name.tank {
+            background-color: #f1c40f;
+            color: black;
+        }
+
+        #adminActions {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        #nickForm {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .dragover {
+            border: 2px dashed white;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center;">Team Draft - Gorilla Mode</h1>
+
+    <div id="nickForm">
+        <input type="text" id="nick" placeholder="Enter your Nick">
+        <select id="role">
+            <option value="TANK">Tank</option>
+            <option value="MELEE DPS">Melee DPS</option>
+            <option value="RANGED DPS">Ranged DPS</option>
+            <option value="HEALER">Healer</option>
+        </select>
+        <button onclick="addNick()">Add</button>
+        <input type="password" id="adminPassword" placeholder="Admin Password">
+        <button onclick="authenticate()">AUTENTICAR</button>
+    </div>
+
+    <div class="container">
+        <div class="area" id="available" ondragover="allowDrop(event)" ondrop="drop(event, 'available')">
+            <h2>Available (<span id="countAvailable">0</span>)</h2>
+        </div>
+        <div class="area" id="teamA" ondragover="allowDrop(event)" ondrop="drop(event, 'teamA')">
+            <h2>Team A (<span id="countTeamA">0</span>)</h2>
+        </div>
+        <div class="area" id="teamB" ondragover="allowDrop(event)" ondrop="drop(event, 'teamB')">
+            <h2>Team B (<span id="countTeamB">0</span>)</h2>
+        </div>
+    </div>
+
+    <div id="adminActions" style="display: none;">
+        <button onclick="clearAll()">Clear All (Admin Only)</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io(); // Conecta ao servidor WebSocket
+    let isAdmin = false;
+
+    let data = { available: [], teamA: [], teamB: [] };
+
+    socket.on('state', (serverData) => {
+        data = serverData;
+        renderAllAreas();
+    });
+
+    function addNick() {
+        const nick = document.getElementById('nick').value;
+        const role = document.getElementById('role').value;
+        if (nick && role) {
+            const newNick = { name: nick, role };
+            socket.emit('addNick', newNick); // Envia ao servidor
+        }
+    }
+
+    function authenticate() {
+        const password = document.getElementById('adminPassword').value;
+        if (password === 'SHURY123') {
+            isAdmin = true;
+            document.getElementById('adminActions').style.display = 'block';
+            alert('Modo administrador ativado!');
+        } else {
+            alert('Senha incorreta!');
+        }
+    }
+
+    function clearAll() {
+        if (!isAdmin) {
+            alert('Apenas administradores podem limpar as divisões.');
+            return;
+        }
+        socket.emit('clearAll', 'SHURY123'); // Solicita limpeza ao servidor
+    }
+
+    function allowDrop(event) {
+        event.preventDefault();
+        event.target.classList.add('dragover');
+    }
+
+    function drop(event, targetArea) {
+        event.preventDefault();
+        if (!isAdmin) {
+            alert('Apenas administradores podem mover nomes.');
+            return;
+        }
+        const dataTransfer = JSON.parse(event.dataTransfer.getData('text'));
+        socket.emit('moveNick', { nick: dataTransfer, from: findNickArea(dataTransfer.name), to: targetArea }); // Envia a movimentação ao servidor
+    }
+
+    function findNickArea(name) {
+        if (data.available.some((nick) => nick.name === name)) return 'available';
+        if (data.teamA.some((nick) => nick.name === name)) return 'teamA';
+        if (data.teamB.some((nick) => nick.name === name)) return 'teamB';
+        return null;
+    }
+
+    function renderAllAreas() {
+        renderArea('available', data.available);
+        renderArea('teamA', data.teamA);
+        renderArea('teamB', data.teamB);
+    }
+
+    function renderArea(areaId, names) {
+        const area = document.getElementById(areaId);
+        area.innerHTML = `<h2>${areaId.charAt(0).toUpperCase() + areaId.slice(1)} (<span id="count${areaId.charAt(0).toUpperCase() + areaId.slice(1)}">${names.length}</span>)</h2>`;
+        names.sort((a, b) => {
+            const roleOrder = { HEALER: 1, TANK: 2, MELEE: 3, RANGED: 4 };
+            return roleOrder[a.role] - roleOrder[b.role] || a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
+        });
+        names.forEach(({ name, role }) => {
+            const div = document.createElement('div');
+            div.className = `name ${role.toLowerCase()}`;
+            div.textContent = `${name} (${role})`;
+            div.draggable = true;
+            div.ondragstart = (event) => event.dataTransfer.setData('text', JSON.stringify({ name, role }));
+            area.appendChild(div);
+        });
+    }
+</script>
+</body>
+</html>
